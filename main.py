@@ -12,7 +12,7 @@ from firebase_admin import credentials, firestore
 # ============================
 #        CONFIGURATION
 # ============================
-BOT_TOKEN = "8648408764:AAF0uIM2SRdF2ZDpSplU-9B0t4YovIGYEY4"
+BOT_TOKEN = "8648408764:AAElFMsBR1er5gOe4siQ-3R-HSYJIRD3Qd8"
 SERVER_URL = "https://file-sharing-njx9.onrender.com"  # তোমার server এর URL
 PORT = 5000
 
