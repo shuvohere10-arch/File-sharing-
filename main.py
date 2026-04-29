@@ -15,8 +15,8 @@ from firebase_admin import credentials, firestore
 API_ID = 21915993 
 API_HASH = "80f10e408544d67e58309d94998782f0"
 
-BOT_TOKEN = "8648408764:AAF0uIM2SRdF2ZDpSplU-9B0t4YovIGYEY4"
-SERVER_URL = "https://youtube-23vo.onrender.com"
+BOT_TOKEN = "8648408764:AAEl2J9Lug25WEV5A3TJRc0pOqruNAA3OUA"
+SERVER_URL = "https://file-sharing-1-lju8.onrender.com"
 PORT = int(os.environ.get("PORT", 5000))
 
 # ============================
