@@ -12,7 +12,7 @@ import asyncio
 # ============================
 #        CONFIGURATION
 # ============================
-BOT_TOKEN = "8648408764:AAHgfuuGjZc2CmG9wX6nA6ljxYwZLYthkEg"
+BOT_TOKEN = "8648408764:AAF_l4Pph3x20Kw7SaKho9B5g3f7l1Tvwtk"
 SERVER_URL = "https://file-sharing-njx9.onrender.com"
 PORT = int(os.environ.get("PORT", 5000))
 
