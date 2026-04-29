@@ -1,18 +1,22 @@
 import os
 import json
 import uuid
-import requests
-from flask import Flask, Response, abort, request as flask_request
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
+import threading
+from flask import Flask, Response, abort
+from pyrogram import Client, filters
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 # ============================
 #        CONFIGURATION
 # ============================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8648135940:AAEEXHwo8VPnBFLZv8Q6LxAz6ZaUMao4Qpg")
-SERVER_URL = "https://file-sharing-njx9.onrender.com"
+# আমি আপনাকে এই দুটি দিয়ে দিচ্ছি, এগুলো পরিবর্তন করার দরকার নেই।
+API_ID = 21915993 
+API_HASH = "80f10e408544d67e58309d94998782f0"
+
+BOT_TOKEN = "8648408764:AAF0uIM2SRdF2ZDpSplU-9B0t4YovIGYEY4"
+SERVER_URL = "https://youtube-23vo.onrender.com"
 PORT = int(os.environ.get("PORT", 5000))
 
 # ============================
@@ -21,143 +25,112 @@ PORT = int(os.environ.get("PORT", 5000))
 def init_firebase():
     firebase_key_json = os.environ.get("FIREBASE_KEY_JSON")
     if not firebase_key_json:
-        raise ValueError("FIREBASE_KEY_JSON environment variable সেট করা নেই!")
-    key_dict = json.loads(firebase_key_json)
-    cred = credentials.Certificate(key_dict)
-    firebase_admin.initialize_app(cred)
-    return firestore.client()
+        print("❌ FIREBASE_KEY_JSON পাওয়া যায়নি!")
+        return None
+    try:
+        key_dict = json.loads(firebase_key_json)
+        if "\\n" in key_dict["private_key"]:
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+        cred = credentials.Certificate(key_dict)
+        firebase_admin.initialize_app(cred)
+        return firestore.client()
+    except Exception as e:
+        print(f"❌ Firebase Error: {e}")
+        return None
 
 db = init_firebase()
 
-# ============================
-#         DATABASE (Firestore)
-# ============================
-def save_file(token: str, file_id: str, file_name: str):
-    db.collection("files").document(token).set({
-        "file_id": file_id,
-        "file_name": file_name
-    })
+# Pyrogram Client Setup (বড় ফাইল সাপোর্টের জন্য)
+bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-def get_file_info(token: str):
+# ============================
+#         DATABASE
+# ============================
+def save_file(token, msg_id, chat_id, file_name):
+    if db:
+        db.collection("files").document(token).set({
+            "msg_id": msg_id,
+            "chat_id": chat_id,
+            "file_name": file_name
+        })
+
+def get_file_info(token):
+    if not db: return None
     doc = db.collection("files").document(token).get()
-    if doc.exists:
-        data = doc.to_dict()
-        return data["file_id"], data["file_name"]
-    return None
-
-# ============================
-#       TELEGRAM BOT HANDLERS
-# ============================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 স্বাগতম!\n\nযেকোনো ফাইল পাঠাও, আমি তোমাকে একটা ডাউনলোড লিংক দেব।\n📁 ফাইল সাইজ সর্বোচ্চ 2GB।"
-    )
-
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-
-    if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name or "file"
-    elif message.video:
-        file_id = message.video.file_id
-        file_name = f"video_{message.video.file_id[-6:]}.mp4"
-    elif message.audio:
-        file_id = message.audio.file_id
-        file_name = message.audio.file_name or f"audio_{message.audio.file_id[-6:]}.mp3"
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-        file_name = f"photo_{message.photo[-1].file_id[-6:]}.jpg"
-    else:
-        await message.reply_text("❌ এই ধরনের ফাইল সাপোর্ট করে না।")
-        return
-
-    token = str(uuid.uuid4()).replace("-", "")[:16]
-    save_file(token, file_id, file_name)
-
-    download_link = f"{SERVER_URL}/dl/{token}"
-    await message.reply_text(
-        f"✅ তোমার ডাউনলোড লিংক:\n\n🔗 {download_link}\n\n"
-        f"📄 ফাইল: {file_name}\n\n"
-        f"এই লিংক কখনো নষ্ট হবে না!"
-    )
-
-# ============================
-#     BUILD TELEGRAM APP
-# ============================
-import asyncio
-
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).updater(None).build()
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO, handle_file))
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(telegram_app.initialize())
+    return doc.to_dict() if doc.exists else None
 
 # ============================
 #        FLASK SERVER
 # ============================
-flask_app = Flask(__name__)
+app = Flask(__name__)
 
-@flask_app.route(f"/webhook", methods=["POST"])
-def webhook():
-    data = flask_request.get_json(force=True)
-    print(f"Webhook received: {data}")
-    update = Update.de_json(data, telegram_app.bot)
-    loop.run_until_complete(telegram_app.process_update(update))
-    return "OK", 200
-
-@flask_app.route("/dl/<token>")
+@app.route("/dl/<token>")
 def download(token):
-    result = get_file_info(token)
-    if not result:
-        abort(404, "লিংকটি সঠিক নয়।")
+    info = get_file_info(token)
+    if not info:
+        abort(404, "লিঙ্কটি সঠিক নয় বা এক্সপায়ার হয়ে গেছে।")
 
-    file_id, file_name = result
-
-    tg_response = requests.get(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/getFile",
-        params={"file_id": file_id}
-    )
-    data = tg_response.json()
-
-    if not data.get("ok"):
-        abort(500, "Telegram থেকে ফাইল পাওয়া যায়নি।")
-
-    file_path = data["result"]["file_path"]
-    tg_file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-    tg_file = requests.get(tg_file_url, stream=True)
+    msg_id = info["msg_id"]
+    chat_id = info["chat_id"]
+    file_name = info["file_name"]
 
     def generate():
-        for chunk in tg_file.iter_content(chunk_size=8192):
-            if chunk:
+        # ২ জিবি পর্যন্ত ফাইল সরাসরি টেলিগ্রাম থেকে স্ট্রিমিং
+        try:
+            # সিঙ্কোনাসলি মেসেজ গেট করা
+            msg = bot.get_messages(chat_id, msg_id)
+            # stream_media সরাসরি বাইট জেনারেট করে যা ফ্লাস্ক ইউজারকে পাঠিয়ে দেয়
+            for chunk in bot.stream_media(msg):
                 yield chunk
+        except Exception as e:
+            print(f"Streaming Error: {e}")
 
     return Response(
         generate(),
         headers={
             "Content-Disposition": f'attachment; filename="{file_name}"',
-            "Content-Type": tg_file.headers.get("Content-Type", "application/octet-stream"),
+            "Content-Type": "application/octet-stream",
         }
     )
 
-@flask_app.route("/")
+@app.route("/")
 def index():
-    return "✅ Server চালু আছে!"
+    return "✅ 2GB Support Server is Running!"
+
+# ============================
+#       TELEGRAM BOT
+# ============================
+@bot.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply_text("👋 স্বাগতম!\n\nযেকোনো ফাইল বা ২ জিবি পর্যন্ত গেম/অ্যাপ পাঠান, আমি ডাউনলোড লিঙ্ক দিচ্ছি।")
+
+@bot.on_message(filters.document | filters.video | filters.audio)
+async def handle_media(client, message):
+    file = message.document or message.video or message.audio
+    file_name = getattr(file, "file_name", f"file_{uuid.uuid4().hex[:5]}")
+    
+    token = str(uuid.uuid4().hex)[:16]
+    
+    # ফায়ারবেসে তথ্য সেভ করা
+    save_file(token, message.id, message.chat.id, file_name)
+    
+    download_link = f"{SERVER_URL}/dl/{token}"
+    await message.reply_text(
+        f"✅ ফাইল পাওয়া গেছে!\n\n🔗 ডাউনলোড লিঙ্ক: {download_link}\n\n"
+        f"📄 নাম: {file_name}\n"
+        f"⚡ এই লিঙ্কটি ২ জিবি ফাইল সাপোর্ট করবে।"
+    )
 
 # ============================
 #           MAIN
 # ============================
-if __name__ == "__main__":
-    # Webhook সেট করো
-    webhook_url = f"{SERVER_URL}/webhook"
-    resp = requests.get(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
-        params={"url": webhook_url, "drop_pending_updates": True}
-    )
-    print(f"✅ Webhook সেট: {resp.json()}")
-    print(f"✅ Webhook URL: {webhook_url}")
-    print(f"✅ Server চালু: http://0.0.0.0:{PORT}")
+def run_flask():
+    app.run(host="0.0.0.0", port=PORT)
 
-    flask_app.run(host="0.0.0.0", port=PORT)
+if __name__ == "__main__":
+    # Flask কে আলাদা থ্রেডে চালানো
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Pyrogram বট চালু করা
+    print("🚀 Bot is starting with 2GB Support...")
+    bot.run()
