@@ -11,7 +11,7 @@ from firebase_admin import credentials, firestore
 # ============================
 #        CONFIGURATION
 # ============================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8648408764:AAHgfuuGjZc2CmG9wX6nA6ljxYwZLYthkEg")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8648135940:AAEEXHwo8VPnBFLZv8Q6LxAz6ZaUMao4Qpg")
 SERVER_URL = "https://file-sharing-njx9.onrender.com"
 PORT = int(os.environ.get("PORT", 5000))
 
