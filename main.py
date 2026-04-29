@@ -2,17 +2,16 @@ import os
 import json
 import uuid
 import requests
-from flask import Flask, Response, abort, request
+from flask import Flask, Response, abort, request as flask_request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import firebase_admin
 from firebase_admin import credentials, firestore
-import asyncio
 
 # ============================
 #        CONFIGURATION
 # ============================
-BOT_TOKEN = "8648408764:AAF_l4Pph3x20Kw7SaKho9B5g3f7l1Tvwtk"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8648408764:AAHgfuuGjZc2CmG9wX6nA6ljxYwZLYthkEg")
 SERVER_URL = "https://file-sharing-njx9.onrender.com"
 PORT = int(os.environ.get("PORT", 5000))
 
@@ -84,19 +83,29 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ============================
-#        FLASK + WEBHOOK
+#     BUILD TELEGRAM APP
 # ============================
-flask_app = Flask(__name__)
+import asyncio
 
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).updater(None).build()
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO, handle_file))
 
-@flask_app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(telegram_app.initialize())
+
+# ============================
+#        FLASK SERVER
+# ============================
+flask_app = Flask(__name__)
+
+@flask_app.route(f"/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
+    data = flask_request.get_json(force=True)
+    print(f"Webhook received: {data}")
     update = Update.de_json(data, telegram_app.bot)
-    asyncio.run(telegram_app.process_update(update))
+    loop.run_until_complete(telegram_app.process_update(update))
     return "OK", 200
 
 @flask_app.route("/dl/<token>")
@@ -142,12 +151,13 @@ def index():
 # ============================
 if __name__ == "__main__":
     # Webhook সেট করো
-    webhook_url = f"{SERVER_URL}/webhook/{BOT_TOKEN}"
+    webhook_url = f"{SERVER_URL}/webhook"
     resp = requests.get(
         f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
         params={"url": webhook_url, "drop_pending_updates": True}
     )
     print(f"✅ Webhook সেট: {resp.json()}")
-
+    print(f"✅ Webhook URL: {webhook_url}")
     print(f"✅ Server চালু: http://0.0.0.0:{PORT}")
+
     flask_app.run(host="0.0.0.0", port=PORT)
