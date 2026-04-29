@@ -13,7 +13,7 @@ from firebase_admin import credentials, firestore
 #        CONFIGURATION
 # ============================
 BOT_TOKEN = "8648408764:AAF0uIM2SRdF2ZDpSplU-9B0t4YovIGYEY4"
-SERVER_URL = "https://youtube-23vo.onrender.com"  # তোমার server এর URL
+SERVER_URL = "https://file-sharing-njx9.onrender.com"  # তোমার server এর URL
 PORT = 5000
 
 # ============================
